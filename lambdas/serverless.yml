@@ -1,0 +1,57 @@
+service: aws-service
+
+frameworkVersion: '3'
+
+plugins:
+  - serverless-plugin-resource-tagging
+  - serverless-localstack
+
+custom:
+    postgresDsn: ${file('.env'), ssm:/aws/reference/secretsmanager/lambda_postgres}
+    lambdaRole:
+      dev:
+        Fn::GetAtt: [ LambdaRole, Arn ]
+      cloud: arn:aws:iam::${aws:accountId}:role/aws-${self:service}-role
+    localstack:
+      debug: true
+      stages:
+        - dev
+
+provider:
+  name: aws
+  runtime: python3.8
+  stage: ${opt:stage, 'dev'}
+  region: 'eu-west-3'
+  httpApi:
+    id: ${self:custom.env.APIGW_ID, ''}
+  stackTags:
+    APP: Personnal
+    SERVICE: Lambda-${self:service}
+    PROJECT: AWS-lambdas
+  environment:
+    STAGE: ${self:provider.stage}
+    POSTGRES_DSN: ${self:custom.postgresDsn}
+
+functions:
+  fetch_data:
+    handler: src/handler.lambda_handler
+    url: true
+    memorySize: 128
+    layers:
+      - arn:aws:lambda:eu-west-3:898466741470:layer:psycopg2-py38:1
+      # Add the layers to reuse on python
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+
+package:
+  individually: true
+  excludeDevDependencies: true
+  patterns:
+    - '!*.md'
+    - '!*.yml'
+    - '!.*'
+    - '!Makefile'
+    - ./src/**/*
+    - ./package.json
